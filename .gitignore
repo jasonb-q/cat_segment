@@ -5,4 +5,4 @@ models/
 images/
 loss_graphs/
 *.swp
-
+*.pt
