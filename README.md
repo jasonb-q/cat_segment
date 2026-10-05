@@ -4,3 +4,11 @@ A deep learning model for segmenting cats in photos. I am using data from oxford
 Here is a little picture of some random climbing guy. bottom left I used the model to cut my cat, Belle, out of the original image and pasted her in with the climber. 
 <br>
 <img width="364" height="549" alt="climbbelle" src="https://github.com/user-attachments/assets/781b640c-e84d-4c7a-84be-3677cf996539" />
+<br>
+Before attention and negatives
+<img width="320" height="320" alt="belle_cut3" src="https://github.com/user-attachments/assets/a9dedc37-7cf2-4ddb-9e6e-dd1f001bd65e" />
+<br>
+After attention and negatives
+<br>
+<img width="320" height="320" alt="belle_cut4" src="https://github.com/user-attachments/assets/f9a7576d-5048-4b74-bef9-cc50be287515" />
+<br>
