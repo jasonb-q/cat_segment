@@ -71,7 +71,7 @@ def get_prediction(model, image):
     cutout_pil = cutout_pil.convert("RGBA")
     cutout_pil.putalpha(alpha_pil)
 
-    cutout_pil.save("belle_lay_cut.png")
+    cutout_pil.save("images/belle_cut4.png")
     plt.figure(figsize=(15, 5))
     
     plt.subplot(1,3,1)
@@ -93,13 +93,13 @@ def get_prediction(model, image):
 if __name__ == "__main__":
     model = load_model()
     #image = Image.open("1000006460.jpg").convert("RGB")
-    image = Image.open("belle_lay.jpg").convert("RGB")
+    image = Image.open("images/belle.jpg").convert("RGB")
     transform = transforms.Compose([
         #transforms.Resize(256),
         #transforms.CenterCrop(256),
         #transforms.RandomRotation((180,180)),
         ResizePad(320),
-        transforms.Lambda(lambda img: TF.rotate(img, -90)),
+        #transforms.Lambda(lambda img: TF.rotate(img, -90)),
         transforms.ToTensor()
         ])
 

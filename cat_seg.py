@@ -7,8 +7,12 @@ from torchvision.datasets import OxfordIIITPet
 from torch.utils.data import Subset, random_split, DataLoader, ConcatDataset
 from CatSegDataset import CatSegDataset
 from CocoDataset import CocoDataset
+from NegDataset import CocoNegativeDataset
 from UNet import UNet
 from tqdm import tqdm
+from pycocotools.coco import COCO
+import random
+import mlflow
 
 CAT_LABEL = 0
 BACKGROUND = 2
@@ -25,7 +29,65 @@ def get_cat_indicies(dataset):
             cat_indecies.append(i)
     return cat_indecies
 
-def get_data_loaders(dataset, train_val=0.8, batch_size=16):
+def show_negative_samples(dataset, n=25, seed=42):
+    rng = random.Random(seed)
+
+    indices = rng.sample(
+        range(len(dataset)),
+        min(n, len(dataset))
+    )
+
+    fig, axes = plt.subplots(
+        5, 5,
+        figsize=(15, 15)
+    )
+
+    for ax, idx in zip(axes.flat, indices):
+        image, mask = dataset[idx]
+
+        ax.imshow(image.permute(1, 2, 0))
+        ax.set_title(f"Index: {idx}")
+        ax.axis("off")
+
+    # Hide unused panels
+    for ax in axes.flat[len(indices):]:
+        ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+def get_coco_cat():
+    coco = COCO("./data/coco2017/annotations/instances_train2017.json")
+
+    cats = coco.loadCats(coco.getCatIds())
+    for cat in cats:
+        print(cat["id"], cat["name"], cat["supercategory"])
+
+def get_negative_dataset(image_size, min_imgs):
+
+    coco = COCO("./data/coco2017/annotations/instances_train2017.json")
+    cat_ids = coco.getCatIds(catNms=["cat"])
+
+    negative_ids = coco.getCatIds(catNms=["teddy bear", "dog", "sheep", "couch", "bed", "cow", "horse", "bear"])
+    candidate_images = set(coco.getImgIds(catIds=negative_ids[0:1]))
+    
+    for category_id in negative_ids[1:]:
+        candidate_images.update(coco.getImgIds(catIds=[category_id]))
+
+    cat_images = set(coco.getImgIds(catIds=cat_ids))
+    negative_images = sorted(candidate_images - cat_images)
+    print(f"Candidate negatives: {len(negative_images)}")
+
+    rng = random.Random(42)
+
+    selected_ids = rng.sample(negative_images, min(min_imgs, len(negative_images)))
+
+    dataset = CocoNegativeDataset(coco, selected_ids, "./data/coco2017/train2017", image_size=image_size)
+    print(f"Dataset size: {len(dataset)}")
+    return dataset
+
+
+def get_data_loaders(dataset, negative_d, train_val=0.8, batch_size=16):
     train_size = int(train_val * len(dataset))
     val_size = len(dataset) - train_size
 
@@ -34,6 +96,8 @@ def get_data_loaders(dataset, train_val=0.8, batch_size=16):
             [train_size, val_size],
             generator=torch.Generator().manual_seed(42)
     )
+
+    train_d = ConcatDataset([train_d, negative_d])
 
     train_loader = DataLoader(
             train_d,
@@ -61,10 +125,24 @@ def dice_loss(logits, targets, smooth=1e-6):
     dice = ( 2 * intersection + smooth ) / (probs.sum(dim=1) + targets.sum(dim=1) + smooth)
     return 1-dice.mean()
 
+def tverksy_loss(logits, targets, alpha=0.7, beta=0.3, smooth=1e-6):
+    probs = torch.sigmoid(logits)
+
+    probs = probs.flatten(1)
+    targets = targets.flatten(1)
+
+    tp = (probs *targets).sum(dim=1)
+    fp = (probs * (1-targets)).sum(dim=1)
+    fn = ((1-probs) * targets).sum(dim=1)
+
+    tversky = (tp + smooth) / (tp + alpha * fp + beta * fn + smooth)
+    return 1 - tversky.mean()
+
 def loss_fn(logits, targets):
     bce_loss = bce(logits, targets)
     d_loss = dice_loss(logits, targets)
-    return bce_loss + d_loss
+    tvksy_loss = tverksy_loss(logits, targets)
+    return bce_loss + tvksy_loss
 
 
 def train_one_epoch( model, loader, optimizer, device):
@@ -172,6 +250,11 @@ def train(model, train_loader, val_loader, epochs):
         scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]["lr"]
 
+        mlflow.log_metric("train_loss", train_loss, step=epoch)
+        mlflow.log_metric("val_loss", val_loss, step=epoch)
+        mlflow.log_metric("val_dice", val_dice, step=epoch)
+        mlflow.log_metric("lerning_rate", current_lr, step=epoch)
+
         if val_loss < best_loss:
             best_loss = val_loss
             epochs_without_improvement = 0
@@ -192,17 +275,30 @@ def train(model, train_loader, val_loader, epochs):
             print("Early Stopping")
             break
 
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    epochs_range = range(1, len(train_losses) + 1)
     
-    plt.plot(train_losses, label="train")
-    plt.plot(val_losses, label="validation")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
+    ax1.plot(epochs_range, train_losses, label="Train Loss")
+    ax1.plot(epochs_range, val_losses, label="Val Loss")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss")
+    ax1.legend(loc="upper left")
 
-    plt.savefig("loss_curve.png", dpi=300, bbox_inches="tight")
+    ax2 = ax1.twinx()
+
+    ax2.plot(epochs_range, val_dices, label="Val Dice", linestyle="--")
+    ax2.set_ylabel("Dice")
+    ax2.set_ylim(0, 1)
+    ax2.legend(loc="upper right")
+
+    plt.title("Training Loss, Validation Loss, and Validation Dice")
+    plt.tight_layout()
+    plt.savefig("loss_dice_curve.png")
     plt.show()
 
 if __name__ == "__main__":
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("cat_seg")
     print(torch.__version__)
     print(torch.cuda.is_available())
 
@@ -223,14 +319,25 @@ if __name__ == "__main__":
             target_types=["binary-category", "segmentation"],
             download=True,
             )
-
+    negatives_d = get_negative_dataset(320, 300)
+    #show_negative_samples(negatives_d, seed=60)
     cat_indecies = get_cat_indicies(oxford)
-    cats_d = CatSegDataset(oxford, cat_indecies, 320)
+    cats_d = CatSegDataset(oxford, cat_indecies, True, 320)
     train_d = ConcatDataset([cats_d, co_dataset])
-    train_loader, val_loader = get_data_loaders(train_d, batch_size=8)
+    train_loader, val_loader = get_data_loaders(train_d, negatives_d, batch_size=8)
 #
     model = UNet().to(device)
-    epochs = 100
-    train(model, train_loader, val_loader, epochs)
+    epochs = 200
+    with mlflow.start_run(run_name="att_moreNeg_2000_tvksy"):
+        mlflow.log_param("optimizer", "AdamW")
+        mlflow.log_param("initial_lr", 1e-3)
+        mlflow.log_param("weight_decay", 1e-4)
+        mlflow.log_param("batch_size", 8)
+        mlflow.log_param("input_size", 320)
+        mlflow.log_param("attention", True)
+        mlflow.log_param("hard_neg_count", len(negatives_d))
+        mlflow.log_param("scheduler_patience", 3)
+        mlflow.log_param("early_stop_patience", 10)
+        train(model, train_loader, val_loader, epochs)
     images_v, masks_v = next(iter(val_loader))
     check_model(model, images_v[0], masks_v[0])

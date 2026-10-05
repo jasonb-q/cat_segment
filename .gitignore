@@ -6,3 +6,7 @@ images/
 loss_graphs/
 *.swp
 *.pt
+*.log
+mlflow.db
+*.png
+*.sh

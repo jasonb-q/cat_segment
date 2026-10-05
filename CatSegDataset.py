@@ -7,10 +7,11 @@ from transforms import *
 
 class CatSegDataset(Dataset):
 
-    def __init__(self, dataset, indicies, image_size=256):
+    def __init__(self, dataset, indicies, augment=False, image_size=256):
         self.dataset = dataset
         self.indicies = indicies
         self.image_size = image_size
+        self.augment = augment
 
     def __len__(self):
         return len(self.indicies)
@@ -30,13 +31,14 @@ class CatSegDataset(Dataset):
                 interpolation=InterpolationMode.NEAREST,
                 )
 
-        # augmentations
-        image, mask = r_affine(image, mask)
-        image, mask = hflip(image, mask)
-        image = r_gaussian(image)
-        image = brightness(image)
-        image = contrast(image)
-        image = saturation(image)
+        if self.augment:
+            # augmentations
+            image, mask = r_affine(image, mask)
+            image, mask = hflip(image, mask)
+            image = r_gaussian(image)
+            image = brightness(image)
+            image = contrast(image)
+            image = saturation(image)
 
         image = TF.to_tensor(image)
         mask = np.array(mask)
