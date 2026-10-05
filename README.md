@@ -6,6 +6,7 @@ Here is a little picture of some random climbing guy. bottom left I used the mod
 <img width="364" height="549" alt="climbbelle" src="https://github.com/user-attachments/assets/781b640c-e84d-4c7a-84be-3677cf996539" />
 <br>
 Before attention and negatives
+<br>
 <img width="320" height="320" alt="belle_cut3" src="https://github.com/user-attachments/assets/a9dedc37-7cf2-4ddb-9e6e-dd1f001bd65e" />
 <br>
 After attention and negatives
